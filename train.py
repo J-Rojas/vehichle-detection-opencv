@@ -9,7 +9,7 @@ from sklearn.externals import joblib
 class Classifier:
 
     def __init__(self, alpha=0.0001, epochs=10):
-        if False:
+        if True:
             self.model = skmodel.SGDClassifier(
                 learning_rate='optimal',
                 loss='hinge',
@@ -20,7 +20,8 @@ class Classifier:
                 n_jobs=-1,
                 n_iter=epochs
             )
-        self.model = sksvm.LinearSVC(C=1.0, verbose=1, class_weight='balanced', max_iter=epochs)
+        else:
+            self.model = sksvm.SVC(C=1.0, verbose=1, class_weight='balanced', max_iter=epochs, kernel='rbf')
 
     def trainAndValidate(self, train, test):
 
@@ -29,7 +30,7 @@ class Classifier:
 
         # Check the training time for model
         t=time.time()
-        self.model.fit(X_train, y_train)
+        self.model.partial_fit(X_train, y_train, [0, 1])
         t2 = time.time()
 
         results = self.test(X_test, y_test)
@@ -55,41 +56,55 @@ class Classifier:
 
         t=time.time()
         predictions = self.model.predict(X)
+        y_scores = self.model.decision_function(X)
         t2 = time.time()
 
-        return {'time': t2-t, 'labels': predictions }
+        return {'time': t2-t, 'labels': predictions, 'scores': y_scores }
 
 class Trainer:
 
-    def __init__(self, classes, featureExtractor, classifier, augment=None):
-        self.classes = classes
-        self.augment = augment
+    def __init__(self, featureExtractor, classifier):
         self.fEx = featureExtractor
         self.clf = classifier
-        self.features = None
-        self.labels = None
 
-    def prepare(self, dump=None, load=None):
+    def prepare(self, data=None, classes=None, dump=None, load=None, augment={}):
 
-        if load and os.path.isfile(load):
-            self.features, self.labels = joblib.load(load)
+        features, labels = None, None
+        positive, negative = None, None
+
+        if data is None and classes is None and load and os.path.isfile(load):
+            features, labels = joblib.load(load)
         else:
-            positive = self.classes[0]
-            negative = self.classes[1]
 
-            flip = self.augment.get('flip', False)
+            if classes:
+                positive = classes[0]
+                negative = classes[1]
+            elif data:
+                positive = data
 
-            positive_features = self.fEx.extract(positive, flip) if len(positive) > 0 else []
-            negative_features = self.fEx.extract(negative, flip) if len(negative) > 0 else []
+            flip = augment.get('flip', False)
 
-            self.features = np.concatenate((positive_features, negative_features))
-            self.labels = np.concatenate((np.ones(len(positive_features)), np.zeros(len(negative_features))))
+            positive_features = self.fEx.extract(positive, flip) if positive is not None and len(positive) > 0 else None
+            negative_features = self.fEx.extract(negative, flip) if negative is not None and len(negative) > 0 else None
 
-            print('Loaded ', len(positive), ' positive examples', ', total with augmentation ', len(positive) * (2 if flip else 1))
-            print('Loaded ', len(negative), ' negative examples', ', total with augmentation ', len(negative) * (2 if flip else 1))
+            if positive_features is not None and negative_features is not None:
+                features = np.concatenate((positive_features, negative_features))
+                labels = np.concatenate((np.ones(len(positive_features)), np.zeros(len(negative_features))))
+            else:
+                features = positive_features if positive_features is not None else negative_features
+                labels = np.ones(len(positive_features)) if positive_features is not None else np.zeros(len(negative_features))
+
+            if data is None:
+
+                pos_len = len(positive) if positive is not None else 0
+                neg_len = len(negative) if negative is not None else 0
+                print('Loaded ', pos_len, ' positive examples', ', total with augmentation ', pos_len * (2 if flip else 1))
+                print('Loaded ', neg_len, ' negative examples', ', total with augmentation ', neg_len * (2 if flip else 1))
 
             if dump:
-                joblib.dump((self.features, self.labels), dump)
+                joblib.dump((features, labels), dump)
+
+        return features, labels
 
     def split(self, X, y, test_ratio=0.2):
         # Split up data into stratified randomized training and test sets
@@ -112,12 +127,9 @@ class Trainer:
 
         return (X_train, y_train), (X_test, y_test)
 
-    def train(self, groups=None, test_ratio=0.2):
+    def train(self, groups):
 
         train_set, test_set = groups
-
-        if groups is None:
-            train_set, test_set = self.split(self.features, self.labels, test_ratio=test_ratio)
 
         train_set = (self.fEx.transform(train_set[0], standardize='fit'), train_set[1])
         test_set = (self.fEx.transform(test_set[0], standardize='transform'), test_set[1])
@@ -132,8 +144,21 @@ class Trainer:
 
         X_test, y_test = self.fEx.transform(X, standardize='transform'), y
 
-        print(X_test, y_test)
-
         results = self.clf.test(X_test, y_test)
 
         print('Test time {}, accuracy {:.3f}'.format(results['time'],results['accuracy']))
+
+        return results
+
+    def predict(self, X):
+
+        X_test = self.fEx.transform(X, standardize='transform')
+
+        results = self.clf.predict(X_test)
+
+        return results
+
+class HardNegativeTrainer(Trainer):
+
+    def __init__(self, **kwargs):
+        super(self, **kwargs)

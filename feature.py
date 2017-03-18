@@ -127,10 +127,7 @@ class Feature:
         spatial_mean_std = None
 
         # Iterate through the list of images
-        for file in imgs:
-
-            # Read in each one by one
-            image = mpimg.imread(file)
+        for image in imgs:
             # apply color conversion if other than 'RGB'
             if cspace != 'RGB':
                 if cspace == 'HSV':
