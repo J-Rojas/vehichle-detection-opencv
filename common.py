@@ -1,4 +1,6 @@
 import matplotlib.pyplot as plt
+import cv2
+import numpy as np
 
 def showImages(images, imgs_row, imgs_col, col_titles=None, cmap=None):
     fig, axes = plt.subplots(imgs_row, imgs_col, figsize=(35, 35),
@@ -18,3 +20,18 @@ def showImages(images, imgs_row, imgs_col, col_titles=None, cmap=None):
 
     plt.show()
     plt.close()
+
+def color_convert(image, cspace):
+    if cspace != 'RGB':
+        if cspace == 'HSV':
+            feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+            feature_image[:,:,0] = np.array(feature_image)[:,:,0] / 360.
+        elif cspace == 'LUV':
+            feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2LUV)
+        elif cspace == 'HLS':
+            feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2HLS)
+            feature_image[:,:,0] = np.array(feature_image)[:,:,0] / 360.
+        elif cspace == 'YUV':
+            feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2YUV)
+    else: feature_image = np.copy(image)
+    return feature_image

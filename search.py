@@ -1,11 +1,13 @@
 import numpy as np
 import cv2
-from common import showImages
+from common import showImages, color_convert
+from feature import Feature
 
 class Search:
 
-    def __init__(self, trainer, start_size, end_size, cell_size,
+    def __init__(self, featureEx, trainer, start_size, end_size, cell_size,
                  overlap_factor=0.125, reduction_factor=0.75, scaling_factor=0.5, sample_shape=(64, 64)):
+        self.featureEx = featureEx
         self.trainer = trainer
         self.start_size = start_size
         self.end_size = end_size
@@ -80,72 +82,6 @@ class Search:
         # Return the list of windows
         return window_list
 
-    # extract features using hog sub-sampling and make predictions
-    @staticmethod
-    def find_cars(img, ystart, ystop, scale, svc, X_scaler, orient, pix_per_cell, cell_per_block, spatial_size, hist_bins):
-
-        draw_img = np.copy(img)
-        img = img.astype(np.float32)/255
-
-        img_tosearch = img[ystart:ystop,:,:]
-        ctrans_tosearch = convert_color(img_tosearch, conv='RGB2YCrCb')
-        if scale != 1:
-            imshape = ctrans_tosearch.shape
-            ctrans_tosearch = cv2.resize(ctrans_tosearch, (np.int(imshape[1]/scale), np.int(imshape[0]/scale)))
-
-        ch1 = ctrans_tosearch[:,:,0]
-        ch2 = ctrans_tosearch[:,:,1]
-        ch3 = ctrans_tosearch[:,:,2]
-
-        # Define blocks and steps as above
-        nxblocks = (ch1.shape[1] // pix_per_cell)-1
-        nyblocks = (ch1.shape[0] // pix_per_cell)-1
-        nfeat_per_block = orient*cell_per_block**2
-        # 64 was the orginal sampling rate, with 8 cells and 8 pix per cell
-        window = 64
-        nblocks_per_window = (window // pix_per_cell)-1
-        cells_per_step = 2  # Instead of overlap, define how many cells to step
-        nxsteps = (nxblocks - nblocks_per_window) // cells_per_step
-        nysteps = (nyblocks - nblocks_per_window) // cells_per_step
-
-        # Compute individual channel HOG features for the entire image
-        hog1 = get_hog_features(ch1, orient, pix_per_cell, cell_per_block, feature_vec=False)
-        hog2 = get_hog_features(ch2, orient, pix_per_cell, cell_per_block, feature_vec=False)
-        hog3 = get_hog_features(ch3, orient, pix_per_cell, cell_per_block, feature_vec=False)
-
-        for xb in range(nxsteps):
-            for yb in range(nysteps):
-                ypos = yb*cells_per_step
-                xpos = xb*cells_per_step
-                # Extract HOG for this patch
-                hog_feat1 = hog1[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel()
-                hog_feat2 = hog2[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel()
-                hog_feat3 = hog3[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel()
-                hog_features = np.hstack((hog_feat1, hog_feat2, hog_feat3))
-
-                xleft = xpos*pix_per_cell
-                ytop = ypos*pix_per_cell
-
-                # Extract the image patch
-                subimg = cv2.resize(ctrans_tosearch[ytop:ytop+window, xleft:xleft+window], (64,64))
-
-                # Get color features
-                spatial_features = bin_spatial(subimg, size=spatial_size)
-                hist_features = color_hist(subimg, nbins=hist_bins)
-
-                # Scale features and make a prediction
-                test_features = X_scaler.transform(np.hstack((spatial_features, hist_features, hog_features)).reshape(1, -1))
-                #test_features = X_scaler.transform(np.hstack((shape_feat, hist_feat)).reshape(1, -1))
-                test_prediction = svc.predict(test_features)
-
-                if test_prediction == 1:
-                    xbox_left = np.int(xleft*scale)
-                    ytop_draw = np.int(ytop*scale)
-                    win_draw = np.int(window*scale)
-                    cv2.rectangle(draw_img,(xbox_left, ytop_draw+ystart),(xbox_left+win_draw,ytop_draw+win_draw+ystart),(0,0,255),6)
-
-        return draw_img
-
     @staticmethod
     def extract_pixels_from_windows(img, windows, sample_shape=(64, 64)):
 
@@ -169,18 +105,37 @@ class Search:
         cellSize = self.cell_size
         overlap = self.overlap_factor
 
-        scaleCurr = scaleStart
+        def calcScaleCurr(scale):
+            #round to nearest cell size
+            scaleCurr = int(cellSize * round(float(scale)/cellSize))
+            return scaleCurr
+
+        sampleSize = self.featureEx.sample_size
+        scaleCurr = calcScaleCurr(scaleStart)
 
         subimg = img[region[0][1]:region[1][1],region[0][0]:region[1][0]].copy()
 
         while scaleCurr >= scaleEnd:
 
+            print(scaleCurr)
+
             windows = Search.slide_window(subimg, xy_window=(scaleCurr, scaleCurr), xy_overlap=(overlap, overlap))
             windows = np.array(windows)
-            dataset = Search.extract_pixels_from_windows(subimg, windows, sample_shape=self.sample_shape)
+            #dataset = Search.extract_pixels_from_windows(subimg, windows, sample_shape=self.sample_shape)
+            cache = None
+            # scale image down based on orignal scale and current scale
+            xDim = subimg.shape[1]
+            yDim = subimg.shape[0]
+            scaledImg = cv2.resize(subimg, (int(sampleSize[0]/scaleCurr * xDim), int(sampleSize[1]/scaleCurr * yDim)))
+            cellsStep = int(round(float((1. - overlap) * sampleSize[0])/cellSize))
 
-            X, labels = self.trainer.prepare(data=dataset)
-            pred = self.trainer.predict(X)
+            dataset, cache = self.featureEx.extractPatches(scaledImg, cellsStep, cache=cache)
+
+            assert(len(dataset) == len(windows))
+
+            #X, labels = self.trainer.prepare(data=dataset)
+            #pred = self.trainer.predict(X)
+            pred = self.trainer.predict(dataset)
             y = pred['labels']
             scores = pred['scores']
 
@@ -191,7 +146,7 @@ class Search:
             results_scores.extend(scores[vals])
 
             scaleCurr = float(scaleCurr) * self.reduction_factor
-            #round to nearest cell size
-            scaleCurr = int(cellSize * round(float(scaleCurr)/cellSize))
+            scaleCurr = calcScaleCurr(scaleCurr)
+
 
         return results_boxes, results_scores
