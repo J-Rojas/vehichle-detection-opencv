@@ -16,16 +16,27 @@ class Search:
         self.sample_shape = sample_shape
 
     @staticmethod
-    def draw_boxes(img, bboxes, color=(0, 0, 255), thick=6):
+    def draw_boxes(img, bboxes, color=(255, 255, 255), alpha=.25, alphas=None, thick=6):
         # Make a copy of the image
-        imcopy = np.copy(img)
+        imcopy = np.array(img * 255, dtype=np.uint8)
+        imalpha = np.zeros((img.shape[0], img.shape[1]), dtype=np.float32)
         # Iterate through the bounding boxes
-        for bbox in bboxes:
-            bbox = ((bbox[0][0], bbox[0][1]), (bbox[1][0], bbox[1][1]))
+        if alphas is None:
+            alphas = []
+            for i in range(len(bboxes)):
+                alphas.append(alpha)
+        for bbox, alp in zip(bboxes, alphas):
+            imtmp = np.zeros_like(imcopy)
+            bboxCv = ((bbox[0][0], bbox[0][1]), (bbox[1][0], bbox[1][1]))
             # Draw a rectangle given bbox coordinates
-            cv2.rectangle(imcopy, bbox[0], bbox[1], color, thick)
-        # Return the image copy with boxes drawn
-        return imcopy
+            cv2.rectangle(imtmp, bboxCv[0], bboxCv[1], color, thick)
+            imalpha[np.sum(imtmp, axis=2) > 0] += alp
+
+        # Return the image copy with boxes layer drawn on top drawn
+        imalpha = np.clip(imalpha, 0., 1.)
+        imalpha = np.dstack((imalpha, imalpha, imalpha))
+        #imalpha = np.ones_like(img, dtype=np.float32)
+        return np.uint8(imcopy * (1 - imalpha) + color * imalpha)
 
     @staticmethod
     def slide_window(img, x_start_stop=[None, None], y_start_stop=[None, None],
@@ -149,7 +160,8 @@ class Search:
 
     def search(self, img, region):
 
-        results = []
+        results_boxes = []
+        results_scores = []
 
         # how many scales to generate? assumes square scales
         scaleStart = self.start_size
@@ -167,11 +179,6 @@ class Search:
             windows = np.array(windows)
             dataset = Search.extract_pixels_from_windows(subimg, windows, sample_shape=self.sample_shape)
 
-            #cols = 8#round(1000 / self.sample_shape[0])
-            #rows = 1#round(len(dataset) / cols)
-
-            #showImages(dataset, int(rows), int(cols))
-
             X, labels = self.trainer.prepare(data=dataset)
             pred = self.trainer.predict(X)
             y = pred['labels']
@@ -180,10 +187,11 @@ class Search:
             vals = np.where(y == 1)[0]
             boxes = windows[vals] + region[0]
 
-            results.extend(boxes)
+            results_boxes.extend(boxes)
+            results_scores.extend(scores[vals])
 
             scaleCurr = float(scaleCurr) * self.reduction_factor
             #round to nearest cell size
             scaleCurr = int(cellSize * round(float(scaleCurr)/cellSize))
-            
-        return results
+
+        return results_boxes, results_scores

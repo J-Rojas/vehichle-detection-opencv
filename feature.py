@@ -8,9 +8,9 @@ import cv2
 class Feature:
 
     def __init__(self, hist_bins=None, spatial_size=None, useMeanAndStd=False,
-                 cspace='RGB', useHog=False, hog_bins=13, hog_cell_size=8, hog_block_size=2):
+                 cspaces=['RGB'], useHog=False, hog_bins=13, hog_cell_size=8, hog_block_size=2):
         self.scaler = skprocess.StandardScaler()
-        self.cspace=cspace
+        self.cspaces=cspaces
         self.hist_bins = hist_bins
         self.spatial_size = spatial_size
         self.useMeanAndStd = useMeanAndStd
@@ -107,13 +107,13 @@ class Feature:
                     Feature.mean_and_std(hog2)
                 ])
 
-        feature_vec = np.concatenate((feature_vec, hog_mean_std))
+                feature_vec = np.concatenate((feature_vec, hog_mean_std))
 
         return feature_vec
 
     # Define a function to extract features from a list of images
     @staticmethod
-    def extract_features(imgs, cspace='RGB',
+    def extract_features(imgs, cspaces=['RGB'],
                             hist_bins=None, spatial_size=None, useMeanAndStd=False, useHog=False,
                             hog_bins=13, hog_cell_size=8, hog_block_size=2, flip=False):
         # Create a list to append feature vectors to
@@ -128,34 +128,40 @@ class Feature:
 
         # Iterate through the list of images
         for image in imgs:
-            # apply color conversion if other than 'RGB'
-            if cspace != 'RGB':
-                if cspace == 'HSV':
-                    feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
-                    feature_image[:,:,0] = np.array(feature_image)[:,:,0] / 360.
-                elif cspace == 'LUV':
-                    feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2LUV)
-                elif cspace == 'HLS':
-                    feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2HLS)
-                    feature_image[:,:,0] = np.array(feature_image)[:,:,0] / 360.
-                elif cspace == 'YUV':
-                    feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2YUV)
-            else: feature_image = np.copy(image)
 
-            feature_vec = Feature.extract_features_from_image(feature_image,
-                hist_bins=hist_bins, spatial_size=spatial_size,
-                useMeanAndStd=useMeanAndStd, useHog=useHog,
-                hog_bins=hog_bins, hog_cell_size=hog_cell_size, hog_block_size=hog_block_size)
+            feature_images = []
+
+            for cspace in cspaces:
+                # apply color conversion if other than 'RGB'
+                if cspace != 'RGB':
+                    if cspace == 'HSV':
+                        feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+                        feature_image[:,:,0] = np.array(feature_image)[:,:,0] / 360.
+                    elif cspace == 'LUV':
+                        feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2LUV)
+                    elif cspace == 'HLS':
+                        feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2HLS)
+                        feature_image[:,:,0] = np.array(feature_image)[:,:,0] / 360.
+                    elif cspace == 'YUV':
+                        feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2YUV)
+                else: feature_image = np.copy(image)
+                feature_images.append(feature_image)
+
+            for feature_image in feature_images:
+                feature_vec = Feature.extract_features_from_image(feature_image,
+                    hist_bins=hist_bins, spatial_size=spatial_size,
+                    useMeanAndStd=useMeanAndStd, useHog=useHog,
+                    hog_bins=hog_bins, hog_cell_size=hog_cell_size, hog_block_size=hog_block_size)
 
             # Append the new feature vector to the features list
             features.append(feature_vec)
 
             if flip:
-                feature_vec = Feature.extract_features_from_image(np.fliplr(feature_image),
-                    hist_bins=hist_bins, spatial_size=spatial_size,
-                    useMeanAndStd=useMeanAndStd, useHog=useHog,
-                    hog_bins=hog_bins, hog_cell_size=hog_cell_size, hog_block_size=hog_block_size)
-
+                for feature_image in feature_images:
+                    feature_vec = Feature.extract_features_from_image(np.fliplr(feature_image),
+                        hist_bins=hist_bins, spatial_size=spatial_size,
+                        useMeanAndStd=useMeanAndStd, useHog=useHog,
+                        hog_bins=hog_bins, hog_cell_size=hog_cell_size, hog_block_size=hog_block_size)
                 # Append the new feature vector to the features list
                 features.append(feature_vec)
 
@@ -163,7 +169,7 @@ class Feature:
         return np.array(features)
 
     def extract(self, imgPaths, flip=False):
-        features = Feature.extract_features(imgPaths, self.cspace,
+        features = Feature.extract_features(imgPaths, self.cspaces,
             hist_bins=self.hist_bins, spatial_size=self.spatial_size,
             useMeanAndStd=self.useMeanAndStd,
             useHog=self.useHog, hog_bins=self.hog_bins, flip=flip,
