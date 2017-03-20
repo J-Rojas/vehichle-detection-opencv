@@ -1,7 +1,6 @@
 import matplotlib.image as mpimg
 import numpy as np
 import sklearn
-import sklearn.preprocessing as skprocess
 import skimage.feature as skimg
 import cv2
 from common import color_convert
@@ -10,7 +9,6 @@ class Feature:
 
     def __init__(self, sample_size=(64, 64), hist_bins=None, spatial_size=None, useMeanAndStd=False,
                  cspaces=['RGB'], useHog=False, hog_bins=13, hog_cell_size=8, hog_block_size=2):
-        self.scaler = skprocess.StandardScaler()
         self.cspaces=cspaces
         self.sample_size = sample_size
         self.hist_bins = hist_bins
@@ -265,8 +263,3 @@ class Feature:
             useHog=self.useHog, hog_bins=self.hog_bins, flip=flip,
             hog_cell_size=self.hog_cell_size, hog_block_size=self.hog_block_size)
         return features
-
-    def transform(self, features, standardize='fit'):
-        if standardize == 'fit':
-            self.scaler.fit(features)
-        return self.scaler.transform(features)

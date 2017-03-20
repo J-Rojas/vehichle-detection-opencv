@@ -2,6 +2,9 @@ import numpy as np
 import sklearn.linear_model as skmodel
 import sklearn.model_selection as skselect
 import sklearn.svm as sksvm
+import sklearn.preprocessing as skprocess
+from sklearn.externals import joblib
+
 import time
 import os
 from sklearn.externals import joblib
@@ -9,6 +12,7 @@ from sklearn.externals import joblib
 class Classifier:
 
     def __init__(self, alpha=0.0001, epochs=10):
+        self.scaler = skprocess.StandardScaler()
         if True:
             self.model = skmodel.SGDClassifier(
                 learning_rate='optimal',
@@ -60,6 +64,19 @@ class Classifier:
         t2 = time.time()
 
         return {'time': t2-t, 'labels': predictions, 'scores': y_scores }
+
+    def save(self, filename):
+        joblib.dump(self.model, filename + '.clf.pkl')
+        joblib.dump(self.scaler, filename + '.scaler.pkl')
+
+    def load(self, filename):
+        self.model = joblib.load(filename + '.clf.pkl')
+        self.scaler = joblib.load(filename + '.scaler.pkl')
+
+    def transform(self, features, standardize='fit'):
+        if standardize == 'fit':
+            self.scaler.fit(features)
+        return self.scaler.transform(features)
 
 class Trainer:
 
@@ -131,8 +148,8 @@ class Trainer:
 
         train_set, test_set = groups
 
-        train_set = (self.fEx.transform(train_set[0], standardize='fit'), train_set[1])
-        test_set = (self.fEx.transform(test_set[0], standardize='transform'), test_set[1])
+        train_set = (self.clf.transform(train_set[0], standardize='fit'), train_set[1])
+        test_set = (self.clf.transform(test_set[0], standardize='transform'), test_set[1])
 
         results = self.clf.trainAndValidate(train_set, test_set)
 
@@ -142,7 +159,7 @@ class Trainer:
 
     def test(self, X, y):
 
-        X_test, y_test = self.fEx.transform(X, standardize='transform'), y
+        X_test, y_test = self.clf.transform(X, standardize='transform'), y
 
         results = self.clf.test(X_test, y_test)
 
@@ -152,7 +169,7 @@ class Trainer:
 
     def predict(self, X):
 
-        X_test = self.fEx.transform(X, standardize='transform')
+        X_test = self.clf.transform(X, standardize='transform')
 
         results = self.clf.predict(X_test)
 
