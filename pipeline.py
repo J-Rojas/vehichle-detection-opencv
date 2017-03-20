@@ -11,44 +11,53 @@ from train import Classifier
 from search import Search
 
 classifier = Classifier()
+
 featureExtractor = Feature(
     sample_size=(64,64),
     hist_bins=None,
     spatial_size=None,
     useMeanAndStd=False,
-    cspaces=['HLS', 'YUV'],
+    cspaces=['YUV', 'HLS'],
     useHog=True,
     hog_bins=9,
     hog_cell_size=8,
     hog_block_size=2
 )
+
 trainer = Trainer(featureExtractor, classifier)
-search = Search(featureExtractor, trainer, 256, 64, 8, overlap_factor=0.875)
+search = Search(featureExtractor, trainer, 256, 74, 8, overlap_factor=0.875)
 
-SCORE_THRESHOLD = 9000
+SCORE_THRESHOLD_SINGLE = 7000
+SCORE_THRESHOLD_HISTORY = 20000
+HEATMAP_MAX = 5
 
-def pipeline(video, frame_count):
-
-    retval, nextframe = video.read()
+def pipeline(frame, frame_count, heatmap, heatmap_history, detect=True, car_bboxs=None):
 
     #convert RGB to 1.0 scale
-    nextframe = np.array(nextframe, dtype=np.float32)
-    nextframe /= 255.
+    frame = np.array(frame, dtype=np.float32)
+    frame /= 255.
 
     if not(retval):
         return False
 
-    windows, scores = search.search(nextframe, ((0, 360), (1280, 640)))
-    heatmap = np.zeros_like(nextframe)
-    votes = np.zeros_like(nextframe)
-    search.add_heat(heatmap, votes, windows, scores)
-    votes[votes == 0] = 1
-    heatmap[heatmap < SCORE_THRESHOLD] = 0
+    if (detect):
+        windows, scores, window_count = search.search(frame, ((0, 360), (1280, 640)))
+        search.add_heat(heatmap, None, windows, scores)
 
-    car_bboxs = search.filter_boxes(heatmap)
-    car_bbox_img = Search.draw_boxes(nextframe, car_bboxs, color=(0, 255, 0), alpha=0.75, thick=2)
+        heatmap[heatmap < SCORE_THRESHOLD_SINGLE] = 0
 
-    return car_bbox_img
+        # average the heatmaps
+        heatmap_sum = np.sum(heatmap_history, axis=0)
+        heatmap_sum[heatmap_sum < SCORE_THRESHOLD_HISTORY] = 0
+
+        heatmap_sum /= np.max(heatmap) + 0.00001
+        heatmap_sum[heatmap_sum < 0.3] = 0
+
+        car_bboxs = search.filter_boxes(heatmap_sum)
+
+    car_bbox_img = Search.draw_boxes(frame, car_bboxs, color=(0, 255, 0), alpha=0.75, thick=2)
+
+    return car_bbox_img, car_bboxs
 
 if len(sys.argv) < 4:
     exit('Usage: model movie_in movie_out')
@@ -77,8 +86,18 @@ video_out.open(
 classifier.load(model_prefix)
 
 i = 0
+car_bboxs = None
+heatmap_history = []
 while True:
-    frame = pipeline(video, i)
+    retval, nextframe = video.read()
+    detect = True
+    heatmap = np.zeros_like(nextframe, dtype=np.float64)
+    heatmap_history.append(heatmap)
+    if (len(heatmap_history) > HEATMAP_MAX):
+        heatmap_history.pop(0)
+
+    frame, car_bboxs = pipeline(nextframe, i, heatmap, heatmap_history, car_bboxs=car_bboxs, detect=detect)
+    print('Cars detected: ', car_bboxs)
     if frame is not False:
         print('writing frame ', i)
         video_out.write(frame)

@@ -7,7 +7,6 @@ from sklearn.externals import joblib
 
 import time
 import os
-from sklearn.externals import joblib
 
 class Classifier:
 
@@ -37,8 +36,13 @@ class Classifier:
         self.model.partial_fit(X_train, y_train, [0, 1])
         t2 = time.time()
 
-        results = self.test(X_test, y_test)
-        test_time = results['time']
+        if (len(X_test) > 0 and len(y_test) > 0):
+            results = self.test(X_test, y_test)
+            test_time = results['time']
+        else:
+            results = {}
+            test_time = 0
+
         results['time'] = t2 - t
         results['test_time'] = test_time
 
@@ -144,16 +148,18 @@ class Trainer:
 
         return (X_train, y_train), (X_test, y_test)
 
-    def train(self, groups):
+    def train(self, groups, verbose=True):
 
         train_set, test_set = groups
 
         train_set = (self.clf.transform(train_set[0], standardize='fit'), train_set[1])
-        test_set = (self.clf.transform(test_set[0], standardize='transform'), test_set[1])
+        if (len(test_set[0]) > 0):
+            test_set = (self.clf.transform(test_set[0], standardize='transform'), test_set[1])
 
         results = self.clf.trainAndValidate(train_set, test_set)
 
-        print('Training time {}, accuracy {:.3f}'.format(results['time'],results['accuracy']))
+        if verbose:
+            print('Training time {}, accuracy {:.3f}'.format(results['time'],results['accuracy']))
 
         return results
 
@@ -174,8 +180,3 @@ class Trainer:
         results = self.clf.predict(X_test)
 
         return results
-
-class HardNegativeTrainer(Trainer):
-
-    def __init__(self, **kwargs):
-        super(self, **kwargs)

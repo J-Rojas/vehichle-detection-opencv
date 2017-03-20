@@ -35,3 +35,17 @@ def color_convert(image, cspace):
             feature_image = cv2.cvtColor(image, cv2.COLOR_RGB2YUV)
     else: feature_image = np.copy(image)
     return feature_image
+
+def intersection(a,b):
+    x = max(a[0][0], b[0][0])
+    y = max(a[0][1], b[0][1])
+    w = min(a[1][0], b[1][0]) - x
+    h = min(a[1][1], b[1][1]) - y
+    if w<=0 or h<=0: return None
+    return ((x, y), (x+w, y+h))
+
+def area(bbox):
+    w = (bbox[1][0] - bbox[0][0])
+    h = (bbox[1][1] - bbox[0][1])
+    area_bbox = w * h
+    return area_bbox

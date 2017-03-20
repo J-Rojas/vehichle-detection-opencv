@@ -1,7 +1,7 @@
 import numpy as np
 import cv2
 import scipy.ndimage.measurements as sklabel
-from common import showImages, color_convert
+from common import showImages, color_convert, area
 from feature import Feature
 
 class Search:
@@ -70,6 +70,12 @@ class Search:
         # Note: you could vectorize this step, but in practice
         # you'll be considering windows one by one with your
         # classifier, so looping makes sense
+
+        # start the search from the bottom of the region up to increase search
+        # priority based on z-distance
+        #y_start = y_start_stop[1] - xy_window[1]
+        #ny_pix_per_step = - ny_pix_per_step
+
         for ys in range(ny_windows):
             for xs in range(nx_windows):
                 # Calculate window position
@@ -89,7 +95,6 @@ class Search:
         subimgs = []
 
         for window in windows:
-            #3) Extract the test window from original image
             subimg = cv2.resize(img[window[0][1]:window[1][1], window[0][0]:window[1][0]], sample_shape)
             subimgs.append(subimg)
 
@@ -116,6 +121,8 @@ class Search:
 
         subimg = img[region[0][1]:region[1][1],region[0][0]:region[1][0]].copy()
 
+        window_count = 0
+
         while scaleCurr >= scaleEnd:
 
             print(scaleCurr)
@@ -132,6 +139,7 @@ class Search:
 
             dataset, cache = self.featureEx.extractPatches(scaledImg, cellsStep, cache=cache)
 
+            print(len(dataset), len(windows))
             assert(len(dataset) == len(windows))
 
             #X, labels = self.trainer.prepare(data=dataset)
@@ -149,8 +157,9 @@ class Search:
             scaleCurr = float(scaleCurr) * self.reduction_factor
             scaleCurr = calcScaleCurr(scaleCurr)
 
+            window_count += len(windows)
 
-        return results_boxes, results_scores
+        return results_boxes, results_scores, window_count
 
     # Malisiewicz et al.
     def non_max_suppression(boxes, overlapThresh):
@@ -215,12 +224,13 @@ class Search:
             # Add += score for all pixels inside each bbox
             # Assuming each "box" takes the form ((x1, y1), (x2, y2))
             heatmap[box[0][1]:box[1][1], box[0][0]:box[1][0]] += score
-            votes[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
+            if votes is not None:
+                votes[box[0][1]:box[1][1], box[0][0]:box[1][0]] += 1
 
         # Return updated heatmap
         return heatmap, votes# Iterate through list of bboxes
 
-    def filter_boxes(self, heatmap):
+    def filter_boxes(self, heatmap, areaThreshold=64*64):
         object_mask, nlabels = sklabel.label(heatmap)
 
         boxes = []
@@ -231,6 +241,8 @@ class Search:
                 (np.min(vals[1]), np.min(vals[0])),
                 (np.max(vals[1]), np.max(vals[0]))
             )
-            boxes.append(bbox)
+            a = area(bbox)
+            if (a > areaThreshold):
+                boxes.append(bbox)
 
         return boxes
