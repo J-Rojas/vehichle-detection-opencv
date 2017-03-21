@@ -125,7 +125,7 @@ class Search:
 
         while scaleCurr >= scaleEnd:
 
-            print(scaleCurr)
+            #print(scaleCurr)
 
             windows = Search.slide_window(subimg, xy_window=(scaleCurr, scaleCurr), xy_overlap=(overlap, overlap))
             windows = np.array(windows)
@@ -139,7 +139,7 @@ class Search:
 
             dataset, cache = self.featureEx.extractPatches(scaledImg, cellsStep, cache=cache)
 
-            print(len(dataset), len(windows))
+            #print(len(dataset), len(windows))
             assert(len(dataset) == len(windows))
 
             #X, labels = self.trainer.prepare(data=dataset)
@@ -244,5 +244,7 @@ class Search:
             a = area(bbox)
             if (a > areaThreshold):
                 boxes.append(bbox)
+            #else:
+            #    print('box filtered: ',bbox)
 
         return boxes
